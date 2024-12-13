@@ -21,11 +21,14 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.datatransferproject.api.launcher.ExtensionContext;
+import org.datatransferproject.api.launcher.Monitor;
 import org.datatransferproject.spi.cloud.storage.AppCredentialStore;
 import org.datatransferproject.spi.cloud.storage.JobStore;
+import org.datatransferproject.spi.cloud.storage.TemporaryPerJobDataStore;
 import org.datatransferproject.spi.transfer.extension.TransferExtension;
 import org.datatransferproject.spi.transfer.provider.Exporter;
 import org.datatransferproject.spi.transfer.provider.Importer;
@@ -91,8 +94,28 @@ class GenericTransferServiceConfig {
   }
 }
 
+@FunctionalInterface
+interface ImporterProvider {
+  public Importer<?, ?> get(
+      AppCredentials appCredentials,
+      URL endpoint,
+      TemporaryPerJobDataStore dataStore,
+      Monitor monitor);
+}
+
 public class GenericTransferExtension implements TransferExtension {
   Map<DataVertical, Importer<?, ?>> importerMap = new HashMap<>();
+
+  static Map<DataVertical, ImporterProvider> importerProviderMap =
+      Map.of(
+          BLOBS,
+          (appCredentials, endpoint, jobStore, monitor) ->
+              new GenericFileImporter<BlobbyStorageContainerResource, BlobbySerializer.ExportData>(
+                  BlobbySerializer::serialize, appCredentials, endpoint, jobStore, monitor),
+          CALENDAR,
+          (appCredentials, endpoint, jobStore, monitor) ->
+              new GenericImporter<CalendarContainerResource, CalendarSerializer.ExportData>(
+                  CalendarSerializer::serialize, appCredentials, endpoint, monitor));
 
   @Override
   public boolean supportsService(String service) {
@@ -139,15 +162,18 @@ public class GenericTransferExtension implements TransferExtension {
           e);
     }
 
-    if (serviceConfig.supportsVertical(BLOBS)) {
-      importerMap.put(
-          BLOBS,
-          new GenericFileImporter<BlobbyStorageContainerResource, BlobbySerializer.ExportData>(
-              BlobbySerializer::serialize,
-              appCredentials,
-              urlAppend(serviceConfig.getEndpoint(), "blobs"),
-              jobStore,
-              context.getMonitor()));
+    for (Entry<DataVertical, ImporterProvider> entry : importerProviderMap.entrySet()) {
+      DataVertical vertical = entry.getKey();
+      ImporterProvider importerProvider = entry.getValue();
+      if (serviceConfig.supportsVertical(vertical)) {
+        importerMap.put(
+            vertical,
+            importerProvider.get(
+                appCredentials,
+                urlAppend(serviceConfig.getEndpoint(), vertical.toString().toLowerCase()),
+                jobStore,
+                context.getMonitor()));
+      }
     }
 
     if (serviceConfig.supportsVertical(MEDIA)
@@ -173,19 +199,9 @@ public class GenericTransferExtension implements TransferExtension {
               urlAppend(serviceConfig.getEndpoint(), "social-posts"),
               context.getMonitor()));
     }
-
-    if (serviceConfig.supportsVertical(CALENDAR)) {
-      importerMap.put(
-          CALENDAR,
-          new GenericImporter<CalendarContainerResource, CalendarSerializer.ExportData>(
-              CalendarSerializer::serialize,
-              appCredentials,
-              urlAppend(serviceConfig.getEndpoint(), "calendar"),
-              context.getMonitor()));
-    }
   }
 
-  private URL urlAppend(URL base, String suffix) {
+  private static URL urlAppend(URL base, String suffix) {
     try {
       String path = base.getPath();
       if (!path.endsWith("/")) {
