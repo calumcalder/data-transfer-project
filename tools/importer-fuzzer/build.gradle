@@ -1,0 +1,14 @@
+plugins {
+    id 'application'
+}
+
+application {
+    mainClass = 'org.datatransferproject.fuzzer.Main'
+}
+
+dependencies {
+  implementation project(':extensions:data-transfer:portability-data-transfer-generic')
+  implementation project(':extensions:cloud:portability-cloud-local')
+  implementation project(':portability-types-common')
+  implementation 'commons-cli:commons-cli:1.9.0'
+}

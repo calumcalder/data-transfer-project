@@ -86,5 +86,8 @@ include ':extensions:data-transfer:portability-data-transfer-generic'
 include ':extensions:auth:portability-auth-offline-demo'
 include ':extensions:data-transfer:portability-data-transfer-offline-demo'
 
+// Tools
+include ':tools:importer-fuzzer'
+
 include ':client'
 include ':client-rest'
